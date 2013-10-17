@@ -41,8 +41,8 @@ namespace comm {
 		return writer;
 	}
 
-	StreamWriter& operator<<(StreamWriter& stream, const Departure& request) {
-		request.serialize(stream);
+	StreamWriter& operator<<(StreamWriter& stream, const Departure& departure) {
+		departure.serialize(stream);
 		return stream;
 	}
 
@@ -74,8 +74,8 @@ namespace comm {
 		return reader;
 	}
 
-	StreamReader& operator>>(StreamReader& reader, Arrival& response) {
-		response.deserialize(reader);
+	StreamReader& operator>>(StreamReader& reader, Arrival& arrival) {
+		arrival.deserialize(reader);
 		return reader;
 	}
 
@@ -101,22 +101,23 @@ namespace comm {
 				uint32_t commandId, arrivalId;
 				reader>>commandId>>arrivalId;
 
-				if (commandId==givenId) {
-					auto handlerPair = givenHandler();
-					Arrival* specialResponse = get<0>(handlerPair);
-					const Departure* departure = get<1>(handlerPair);
-					ResponseAction& arrivalAction = get<2>(handlerPair);
-					ResponseAction& departureAction = get<3>(handlerPair);
+				bool isPassiveArrival = givenHandlers.find(commandId)!=givenHandlers.end();
+				if (isPassiveArrival) {
+					GivenArrivalHandler& handler = givenHandlers.at(commandId);
+					auto counterParts = handler();
+					Arrival* specialResponse = get<0>(counterParts);
+					const Departure* departure = get<1>(counterParts);
+					ResponseAction& arrivalAction = get<2>(counterParts);
+					ResponseAction& departureAction = get<3>(counterParts);
 
 					reader>>*specialResponse;
 					arrivalAction(true, "");
 					send(*departure, arrivalId, departureAction);
-					
 				} else {
 					auto responsePair = seqid2arrival.at(arrivalId);
-					Arrival* response = responsePair.first;
+					Arrival* arrival = responsePair.first;
 					ResponseAction action = responsePair.second;
-					reader>>*response;
+					reader>>*arrival;
 					action(true, "");
 
 					seqid2arrival.erase(arrivalId);
@@ -132,12 +133,12 @@ namespace comm {
 		stream.close();
 	}
 
-	pair<uint8_t*, int> Communicator::buildPayload(const Departure& request, uint32_t seqId) {
+	pair<uint8_t*, int> Communicator::buildPayload(const Departure& departure, uint32_t seqId) {
 		uint8_t buffer[1024];
 		memset(buffer, 0, sizeof(buffer));
 
 		StreamWriter writer(buffer);
-		writer<<request.commandId()<<seqId<<request;
+		writer<<departure.commandId()<<seqId<<departure;
 
 		int payloadSize = writer.bytesWritten();
 
@@ -147,19 +148,18 @@ namespace comm {
 		return make_pair(payload, payloadSize);
 	}
 
-	void Communicator::exchange(const Departure* request, Arrival* response, ResponseAction action) {
+	void Communicator::exchange(const Departure* departure, Arrival* arrival, ResponseAction action) {
 		uint32_t departureId;
-		exchangeLock->lock([this, &departureId, response, &action](){
+		exchangeLock->lock([this, &departureId, arrival, &action](){
 			departureId = sequenceId++;
-			seqid2arrival.insert(make_pair(departureId, make_pair(response, action)));
+			seqid2arrival.insert(make_pair(departureId, make_pair(arrival, action)));
 		});
 
-		send(*request, departureId, [](bool, const string&){});
+		send(*departure, departureId, [](bool, const string&){});
 	}
 
 	void Communicator::registerPassiveArrivalHandler(uint32_t cmdId, GivenArrivalHandler handler) {
-		givenId = cmdId;
-		givenHandler = handler;
+		givenHandlers.insert(make_pair(cmdId, handler));
 	}
 
 	void Communicator::send( const Departure& departure, uint32_t departureId, ResponseAction action ) {
@@ -172,5 +172,4 @@ namespace comm {
 			action(true, "");
 		});
 	}
-
 }

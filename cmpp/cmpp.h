@@ -30,24 +30,31 @@ namespace cmpp {
 
 	class CMPP_API MessageGateway {
 	public:
-		MessageGateway(const char* endpoint, int port, SMSAcceptor smsAcceptor, ReportAcceptor reportAcceptor);
+		MessageGateway(const char* endpoint, int port, SMSAcceptor smsAcceptor, ReportAcceptor reportAcceptor, long maxLives = 3, float timeout = 60.0, float heartbeatInterval = 180.0);
 		~MessageGateway();
 
-		void open(const SPID *spid, CommonAction response);
-
-		// close必须是同步的，原因如下：
-		// 如果MessageGateway的内部是单线程的，那么close一定是同步的，无须解释
-		// 如果MessageGateway的处理使用了多线程，考虑到一个线程不可能等待自己结束，因为这样会
-		// 造成死循环。所以内部线程的结束一定是由MessageGateway所使用的线程之外的线程（例如主线程）
-		// 来监控的。这意味着，close对于调用者来说，一定是阻塞的。
+		void open(const SPID *spid, CommonAction action);
 		void close();
+		void send(const MessageTask* task, SubmitAction action);
 
-		void send(const MessageTask* task, SubmitAction response);
+	private:
+		// 防止拷贝MessageGateway对象
+		MessageGateway(const MessageGateway&);
+		static unsigned long __stdcall heartbeatThread(void* self);
+		void keepActive();
+		void authenticate( const SPID* account, CommonAction& action );
+		void registerDeliveriesHandler();
+		void registerActiveHandler();
 
 	private:
 		Communicator* communicator;
 		SocketStream* stream;
 		const char* spid;
 		DeliveryAcceptors* acceptors;
+		void* heartbeatThreadHandle;
+		void* heartbeatEvent;
+		long maxLives;
+		float timeout;
+		float heartbeatInterval;
 	};
 }

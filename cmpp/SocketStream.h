@@ -5,7 +5,6 @@
 #include <list>
 #include <cstdint>
 #include "communicator.h"
-#include <wtypes.h>
 #include <tuple>
 
 using std::function;
@@ -27,14 +26,14 @@ namespace cmpp {
 		virtual void send( const uint8_t* payload, size_t count, function<void(bool)> doneAction);
 
 	private:
-		void handleExports();
-		void handleIncomes();
+		void handleSending();
+		void handleReceiving();
 		bool setupSocket();
-		bool sendWhole(const uint8_t* payload, size_t total);
-		bool receiveWhole(uint8_t* buff, size_t total);
+		bool sendTrunk(const uint8_t* payload, size_t total);
+		bool receiveTrunk(uint8_t* buff, size_t total);
 
-		static DWORD __stdcall sendFunc(LPVOID self);
-		static DWORD __stdcall recvFunc(LPVOID self);
+		static DWORD __stdcall sendingThreadFunc(LPVOID self);
+		static DWORD __stdcall receivingThreadFunc(LPVOID self);
 	private:
 		unsigned int tcpSocket;
 		string endpoint;

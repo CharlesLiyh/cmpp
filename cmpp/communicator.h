@@ -81,16 +81,16 @@ namespace comm {
 		bool open();
 		void close();
 		void registerPassiveArrivalHandler(uint32_t cmdId, GivenArrivalHandler handler);
-		void exchange(const Departure* request, Arrival* response, ResponseAction action);
+		void exchange(const Departure* departure, Arrival* arrival, ResponseAction action);
 
 	private:
 		void send(const Departure& departure, uint32_t departureId, ResponseAction action);
-		static pair<uint8_t*, int> buildPayload(const Departure& request, uint32_t sequenceId);
+		static pair<uint8_t*, int> buildPayload(const Departure& departure, uint32_t sequenceId);
 
 	private:
 		Stream& stream;
 		map< uint32_t, pair<Arrival*, ResponseAction> > seqid2arrival;
-		map<const Arrival*, uint32_t> arrival2seqid;
+		map<uint32_t, GivenArrivalHandler> givenHandlers;
 		uint32_t givenId;
 		GivenArrivalHandler givenHandler;
 		uint32_t sequenceId;

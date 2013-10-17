@@ -75,15 +75,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="AccessLock.h" />
+    <ClInclude Include="active.h" />
     <ClInclude Include="cmpp.h" />
     <ClInclude Include="communicator.h" />
     <ClInclude Include="conceptions.h" />
     <ClInclude Include="connect.h" />
-    <ClInclude Include="cmppdefines.h" />
-    <ClInclude Include="cmppsocket.h" />
     <ClInclude Include="delivery.h" />
     <ClInclude Include="md5.h" />
-    <ClInclude Include="sgip.h" />
     <ClInclude Include="SocketStream.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="submit.h" />
@@ -92,8 +90,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AccessLock.cpp" />
+    <ClCompile Include="active.cpp" />
     <ClCompile Include="cmpp.cpp" />
-    <ClCompile Include="cmppsocket.cpp" />
     <ClCompile Include="communicator.cpp" />
     <ClCompile Include="conceptions.cpp" />
     <ClCompile Include="delivery.cpp" />

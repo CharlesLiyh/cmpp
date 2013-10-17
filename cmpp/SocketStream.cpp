@@ -24,7 +24,7 @@ namespace cmpp {
 		delete exportsLock;
 	}
 
-	void SocketStream::handleExports() {
+	void SocketStream::handleSending() {
 		bool moreJobs = true;
 		while (moreJobs) {
 			HANDLE events[] = { closeEvent, exportsSemaphore };
@@ -41,18 +41,18 @@ namespace cmpp {
 
 					// 整个数据包的长度是业务数据的长度+包头长度 = count + sizeof(sizeWrap)
 					int32_t sizeWrap = htonl(count + sizeof(sizeWrap));
-					doneAction(sendWhole((uint8_t*)&sizeWrap, sizeof(sizeWrap)) && sendWhole(payload, count));
+					doneAction(sendTrunk((uint8_t*)&sizeWrap, sizeof(sizeWrap)) && sendTrunk(payload, count));
 					exports.pop_front();
 				});
 			}
 		}
 	}
 
-	void SocketStream::handleIncomes() {
+	void SocketStream::handleReceiving() {
 		bool success = true;
 		while(success) {
 			int32_t sizeWrap;
-			success = success && receiveWhole((uint8_t*)&sizeWrap, sizeof(sizeWrap));
+			success = success && receiveTrunk((uint8_t*)&sizeWrap, sizeof(sizeWrap));
 			if (!success)
 				break;
 
@@ -61,7 +61,7 @@ namespace cmpp {
 
 			auto_ptr<uint8_t> buff(new uint8_t[payloadSize]);
 
-			success = success && receiveWhole(buff.get(), payloadSize);
+			success = success && receiveTrunk(buff.get(), payloadSize);
 			if (!success)
 				break;
 
@@ -78,13 +78,13 @@ namespace cmpp {
 		}
 	}
 
-	DWORD SocketStream::sendFunc(LPVOID self) {
-		((SocketStream*)self)->handleExports();
+	DWORD SocketStream::sendingThreadFunc(LPVOID self) {
+		((SocketStream*)self)->handleSending();
 		return 0;
 	}
 
-	DWORD SocketStream::recvFunc(LPVOID self) {
-		((SocketStream*)self)->handleIncomes();
+	DWORD SocketStream::receivingThreadFunc(LPVOID self) {
+		((SocketStream*)self)->handleReceiving();
 		return 0;
 	}
 
@@ -98,8 +98,8 @@ namespace cmpp {
 		::ResetEvent(closeEvent);
 
 		DWORD threadId;
-		sendThread = ::CreateThread(NULL, 0, sendFunc, this, 0, &threadId);
-		recvThread = ::CreateThread(NULL, 0, recvFunc, this, 0, &threadId);
+		sendThread = ::CreateThread(NULL, 0, sendingThreadFunc, this, 0, &threadId);
+		recvThread = ::CreateThread(NULL, 0, receivingThreadFunc, this, 0, &threadId);
 
 		return true;
 	}
@@ -154,11 +154,11 @@ namespace cmpp {
 		return success;
 	}
 
-	bool SocketStream::sendWhole( const uint8_t* payload, size_t total ) {
+	bool SocketStream::sendTrunk( const uint8_t* payload, size_t total ) {
 		return process(tcpSocket, (const char*)payload, total, &::send);
 	}
 
-	bool SocketStream::receiveWhole( uint8_t* buff, size_t total ) {
+	bool SocketStream::receiveTrunk( uint8_t* buff, size_t total ) {
 		return process(tcpSocket, (char*)buff, total, &::recv);
 	}
 }
