@@ -15,7 +15,7 @@ namespace cmpp {
 			return 0x00000001;
 		}
 
-		virtual void serialize(comm::StreamWriter& stream) const;
+		virtual void serialize(StreamWriter& stream) const;
 
 	private:
 		const SPID* spid;
@@ -31,7 +31,7 @@ namespace cmpp {
 		const string& errorMessage() const { return message; }
 		int upperVersion() const { return version; }
 
-		virtual void deserialize( comm::StreamReader& reader );
+		virtual void deserialize( StreamReader& reader );
 
 	private:
 		bool verified;

@@ -1,13 +1,12 @@
 #include "stdafx.h"
-#include <string>
-#include <vector>
-#include <winsock2.h>
-#include "gtest/gtest.h"
 #include "cmpp/cmpp.h"
 #include "cmpp/cmppsocket.h"
 #include "cmpp/conceptions.h"
 #include "cmpp/communicator.h"
-#include "cmpp/connect.h"
+#include "gtest/gtest.h"
+#include <string>
+#include <vector>
+
 using namespace comm;
 
 #pragma comment(lib, "ws2_32.lib")
@@ -41,9 +40,10 @@ class CMPPTests : public Test {
 };
 
 TEST_F(CMPPTests, aTest) {
-	MessageGateway gateWay("127.0.0.1", 7890, 
+	Communicator commObj("127.0.0.1", 7890);
+	MessageGateway gateWay(&commObj, 
 		[](const char* src, const char*dst, const char* text){ printf("[SMS Report]src:%s dst:%s text:%s\n", src, dst, text); }, 
-		[](uint64_t msgId, DeliverCode code){ printf("[Delivery Report]msgId:%PRIu64 code:%d\n", code);});
+		[](uint64_t msgId, DeliverCode code){ printf("[Delivery Report]msgId:%PRIu64 code:%d\n", code);}, 3, 60, 3 );
 	SPID* spid = new SPID("403037", "1234");
 	gateWay.open(spid, [spid](bool verfied, const char* message){
 		delete spid;
@@ -58,14 +58,3 @@ TEST_F(CMPPTests, aTest) {
 	WaitForSingleObject(e, INFINITE);
 	gateWay.close();
 }
-
-/*
-TEST_F(CMPPTests, CheckBytesOfLoginPackage) {
-
-	ActionRecorder recorder;
-	MessageGateway gateWay(recorder);
-
-	gateWay.send(Login("901001", "test", 1380813704), [](bool success, const char* failure){});
-
-}
-*/

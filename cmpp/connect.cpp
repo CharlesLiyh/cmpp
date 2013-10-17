@@ -4,6 +4,7 @@
 #include "connect.h"
 #include "md5.h"
 #include "communicator.h"
+#include "serialization.h"
 using namespace comm;
 
 namespace cmpp {
@@ -14,7 +15,7 @@ namespace cmpp {
 		timeStamp = tmStamp;
 	}
 
-	void Connect::serialize(comm::StreamWriter& writer ) const
+	void Connect::serialize(StreamWriter& writer ) const
 	{
 		// {
 		// 		unsigned char spid[6];						//	9开头的6位企业码
@@ -64,7 +65,7 @@ namespace cmpp {
 		verified = false;
 	}
 
-	void ConnectResponse::deserialize(comm::StreamReader& reader ) {
+	void ConnectResponse::deserialize(StreamReader& reader ) {
 		uint8_t status, ver;
 		uint8_t certificationData[17];
 		reader>>status;

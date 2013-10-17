@@ -2,6 +2,7 @@
 #include <cstdint>
 #include "submit.h"
 #include "conceptions.h"
+#include "serialization.h"
 using namespace comm;
 
 namespace cmpp {

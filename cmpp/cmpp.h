@@ -21,7 +21,6 @@ namespace cmpp {
 
 	class SPID;
 	class MessageTask;
-	class SocketStream;
 	typedef function<void(bool success, const char* failure)> CommonAction;
 	typedef function<void(bool success, const char* failure, uint64_t)> SubmitAction;
 	typedef function<void(const char*, const char*, const char*)> SMSAcceptor;
@@ -30,7 +29,7 @@ namespace cmpp {
 
 	class CMPP_API MessageGateway {
 	public:
-		MessageGateway(const char* endpoint, int port, SMSAcceptor smsAcceptor, ReportAcceptor reportAcceptor, long maxLives = 3, float timeout = 60.0, float heartbeatInterval = 180.0);
+		MessageGateway(Communicator* communicator, SMSAcceptor smsAcceptor, ReportAcceptor reportAcceptor, long maxLives = 3, float timeout = 60.0, float heartbeatInterval = 180.0);
 		~MessageGateway();
 
 		void open(const SPID *spid, CommonAction action);
@@ -48,7 +47,6 @@ namespace cmpp {
 
 	private:
 		Communicator* communicator;
-		SocketStream* stream;
 		const char* spid;
 		DeliveryAcceptors* acceptors;
 		void* heartbeatThreadHandle;

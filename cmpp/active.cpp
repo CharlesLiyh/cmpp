@@ -1,5 +1,7 @@
 #include "stdafx.h"
 #include "active.h"
+#include "serialization.h"
+
 using namespace comm;
 
 namespace cmpp {
@@ -9,11 +11,11 @@ namespace cmpp {
 		return CommandId;
 	}
 
-	void Active::serialize( comm::StreamWriter& writer ) const {
+	void Active::serialize( StreamWriter& writer ) const {
 		// Active包没有任何字段
 	}
 
-	void Active::deserialize( comm::StreamReader& reader ) {
+	void Active::deserialize( StreamReader& reader ) {
 		// 同serialize，由于没有任何数据，所以什么都不用做
 	}
 

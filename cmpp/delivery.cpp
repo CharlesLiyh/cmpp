@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "delivery.h"
+#include "serialization.h"
 #include <cstdint>
 
 using namespace comm;

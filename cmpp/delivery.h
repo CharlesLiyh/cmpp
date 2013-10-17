@@ -7,7 +7,7 @@ namespace cmpp {
 	public:
 		static const uint32_t CommandId = 0x00000005;
 
-		virtual void deserialize( comm::StreamReader& reader );
+		virtual void deserialize( StreamReader& reader );
 
 		uint64_t messageId() const;
 
@@ -30,7 +30,7 @@ namespace cmpp {
 	protected:
 		virtual uint32_t commandId() const;
 
-		virtual void serialize( comm::StreamWriter& writer ) const;
+		virtual void serialize( StreamWriter& writer ) const;
 
 	private:
 		uint64_t msgId;

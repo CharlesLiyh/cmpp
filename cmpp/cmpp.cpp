@@ -3,7 +3,6 @@
 #include <memory>
 #include "cmpp.h"
 #include "communicator.h" 
-#include "SocketStream.h"
 #include "connect.h"
 #include "terminate.h"
 #include "submit.h"
@@ -19,24 +18,20 @@ namespace cmpp {
 		ReportAcceptor reportAcceptor;
 	};
 
-	MessageGateway::MessageGateway(const char* endpoint, int port, SMSAcceptor sAcceptor, ReportAcceptor rAcceptor, long lives, float timeoutVal, float interval) {
+	MessageGateway::MessageGateway(Communicator* aCommunicator, SMSAcceptor sAcceptor, ReportAcceptor rAcceptor, long lives, float timeoutVal, float interval) {
 		maxLives = lives;
 		timeout = timeoutVal;
 		heartbeatInterval = interval;
+		spid = nullptr;
 
+		communicator = aCommunicator;
 		acceptors = new DeliveryAcceptors;
 		acceptors->smsAcceptor = sAcceptor;
 		acceptors->reportAcceptor = rAcceptor;
-
-		stream = new SocketStream(endpoint, port);
-		communicator = new Communicator(*stream);
-		spid = nullptr;
 	}
 
 	MessageGateway::~MessageGateway() {
 		delete acceptors;
-		delete communicator;
-		delete stream;
 		delete spid;
 	}
 

@@ -11,7 +11,7 @@ namespace cmpp {
 
 	protected:
 		virtual uint32_t commandId() const;
-		virtual void serialize(comm::StreamWriter& writer) const;
+		virtual void serialize(StreamWriter& writer) const;
 
 	private:
 		const MessageTask* task;
@@ -27,7 +27,7 @@ namespace cmpp {
 		const string& reason() const;
 
 	protected:
-		virtual void deserialize(comm::StreamReader& reader);
+		virtual void deserialize(StreamReader& reader);
 
 	private:
 		bool success;

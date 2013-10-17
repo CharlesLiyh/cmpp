@@ -3,8 +3,6 @@
 
 using comm::Departure;
 using comm::Arrival;
-using comm::StreamWriter;
-using comm::StreamReader;
 
 namespace cmpp {
 	class Terminate : public Departure {

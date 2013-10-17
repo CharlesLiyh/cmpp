@@ -2,6 +2,7 @@
 #include "terminate.h"
 #include "cmpp.h"
 #include "communicator.h"
+#include "serialization.h"
 
 using namespace comm;
 

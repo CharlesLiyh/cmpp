@@ -8,13 +8,13 @@ namespace cmpp {
 
 	protected:
 		virtual uint32_t commandId() const;
-		virtual void serialize( comm::StreamWriter& writer ) const;
-		virtual void deserialize( comm::StreamReader& reader );
+		virtual void serialize( StreamWriter& writer ) const;
+		virtual void deserialize( StreamReader& reader );
 	};
 
 	class ActiveEcho : public comm::Departure, public comm::Arrival {
 		virtual uint32_t commandId() const;
-		virtual void serialize( comm::StreamWriter& writer ) const;
-		virtual void deserialize( comm::StreamReader& reader );
+		virtual void serialize( StreamWriter& writer ) const;
+		virtual void deserialize( StreamReader& reader );
 	};
 }
