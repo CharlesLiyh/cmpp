@@ -1,9 +1,9 @@
 #include "stdafx.h"
 #include "cmpp/cmpp.h"
-#include "cmpp/cmppsocket.h"
 #include "cmpp/conceptions.h"
 #include "cmpp/communicator.h"
 #include "gtest/gtest.h"
+#include <windows.h>
 #include <string>
 #include <vector>
 

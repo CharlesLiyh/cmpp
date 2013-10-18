@@ -38,6 +38,8 @@ namespace comm {
 		virtual void deserialize(StreamReader& reader) = 0;
 	};
 
+	class SocketStream;
+
 	class CMPP_API Communicator {
 	public:
 		typedef function<void(bool, const string&)> ResponseAction; 
@@ -53,19 +55,14 @@ namespace comm {
 
 	private:
 		static pair<const uint8_t*, size_t> buildPayload(const Departure& departure, uint32_t sequenceId);
-		bool setupSocket();
 		void handleSending();
 		void handleReceiving();
-		bool sendTrunk(const uint8_t* payload, size_t size);
-		bool receiveTrunk(uint8_t* buff, size_t size);
 
 		static unsigned long __stdcall sendingThreadFunc(void* self);
 		static unsigned long __stdcall receivingThreadFunc(void* self);
 
 	private:
-		unsigned int tcpSocket;
-		const char* endpoint;
-		int port;
+		SocketStream* stream;
 		uint32_t sequenceId;
 
 		map< uint32_t, GivenArrivalHandler > *givenHandlers;

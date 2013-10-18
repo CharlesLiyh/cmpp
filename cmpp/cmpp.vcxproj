@@ -86,6 +86,7 @@
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="submit.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="socketstream.h" />
     <ClInclude Include="terminate.h" />
   </ItemGroup>
   <ItemGroup>
@@ -111,6 +112,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="submit.cpp" />
+    <ClCompile Include="socketstream.cpp" />
     <ClCompile Include="terminate.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

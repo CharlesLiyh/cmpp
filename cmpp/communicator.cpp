@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "communicator.h"
 #include "serialization.h"
+#include "socketstream.h"
 #include "AccessLock.h"
 #include <utility>
 using namespace std;
@@ -12,43 +13,45 @@ namespace comm {
 	//////////////////////////////////////////////////////////////////////////
 	// Communicator
 
-	Communicator::Communicator(const char* anEndpoint, int aPort){
-		endpoint = _strdup(anEndpoint);
-		port = aPort;
+	Communicator::Communicator(const char* endpoint, int port){
 		seqid2arrival = new map< uint32_t, pair<Arrival*, ResponseAction> >;
 		givenHandlers = new map<uint32_t, GivenArrivalHandler>;
 		departures = new list< tuple<uint32_t, const Departure*, ResponseAction> >;
 
+		stream = new SocketStream(endpoint, port);
 		closeEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
 		exchangeLock = new AccessLock();
 	}
 
 	Communicator::~Communicator() {
+		delete stream;
 		delete departures;
 		delete givenHandlers;
 		delete seqid2arrival;
-		delete endpoint;
 		delete exchangeLock;
 		::CloseHandle(closeEvent);
 	}
 
 	bool Communicator::open() {
 		sequenceId = 0;
-		if (!setupSocket())
-			return false;
 
-		::ResetEvent(closeEvent);
-		departuresSemaphore = ::CreateSemaphore(NULL, 0, 65535, NULL);
+		if (stream->open()) {
+			::ResetEvent(closeEvent);
+			departuresSemaphore = ::CreateSemaphore(NULL, 0, 65535, NULL);
 
-		DWORD threadId;
-		sendThread = ::CreateThread(NULL, 0, sendingThreadFunc, this, 0, &threadId);
-		recvThread = ::CreateThread(NULL, 0, receivingThreadFunc, this, 0, &threadId);
-		return true;
+			DWORD threadId;
+			sendThread = ::CreateThread(NULL, 0, sendingThreadFunc, this, 0, &threadId);
+			recvThread = ::CreateThread(NULL, 0, receivingThreadFunc, this, 0, &threadId);
+			
+			return true;
+		}
+
+		return false;
 	}
 
 	void Communicator::close() {
 		::SetEvent(closeEvent);
-		closesocket(tcpSocket);
+		stream->close();
 
 		// 等待数据发送线程‘寿终正寝’
 		::WaitForSingleObject(sendThread, INFINITE);
@@ -60,16 +63,11 @@ namespace comm {
 	pair<const uint8_t*,size_t> Communicator::buildPayload(const Departure& departure, uint32_t seqId) {
 		uint8_t buffer[1024] = {0};
 
-		const uint32_t HeaderSize = sizeof(uint32_t);
+		StreamWriter writer(buffer);
+		writer<<departure.commandId()<<seqId;
+		departure.serialize(writer);
 
-		StreamWriter payloadWriter(buffer+HeaderSize);
-		payloadWriter<<departure.commandId()<<seqId;
-		departure.serialize(payloadWriter);
-
-		uint32_t payloadSize = HeaderSize + (uint32_t)payloadWriter.bytesWritten();
-
-		StreamWriter headerWriter(buffer);
-		headerWriter<<payloadSize;
+		size_t payloadSize = writer.bytesWritten();
 
 		uint8_t* payload = new uint8_t[payloadSize];
 		memcpy_s(payload, payloadSize, buffer, payloadSize);
@@ -115,7 +113,7 @@ namespace comm {
 				const uint8_t* payload = payloadPair.first;
 				size_t payloadSize = payloadPair.second;
 
-				sendTrunk(payload, payloadSize);
+				stream->send(payload, payloadSize);
 
 				delete payload;
 				departureAction(true, "");
@@ -126,62 +124,50 @@ namespace comm {
 	void Communicator::handleReceiving() {
 		bool success = true;
 		while(success) {
-			int32_t sizeWrap;
-			success = success && receiveTrunk((uint8_t*)&sizeWrap, sizeof(sizeWrap));
-			if (!success)
-				break;
-
-			size_t payloadSize = ntohl(sizeWrap);
-			payloadSize -= sizeof(sizeWrap);
-
-			auto_ptr<uint8_t> buff(new uint8_t[payloadSize]);
-
-			success = success && receiveTrunk(buff.get(), payloadSize);
-			if (!success)
-				break;
-
-			printf("income package, size:%d\n", payloadSize);
-			for (size_t i=0; i<payloadSize; ++i) {
-				printf("%02X ", buff.get()[i]);
-				if ( ((i+1)%16)==0 ) {
-					printf("\n");
+			success = stream->recv([this](const uint8_t* payload, size_t payloadSize){
+				printf("income package, size:%d\n", payloadSize);
+				for (size_t i=0; i<payloadSize; ++i) {
+					printf("%02X ", payload[i]);
+					if ( ((i+1)%16)==0 ) {
+						printf("\n");
+					}
 				}
-			}
-			printf( payloadSize%16==0 ? "\n" : "\n\n");
+				printf( payloadSize%16==0 ? "\n" : "\n\n");
 
-			StreamReader reader(buff.get());
+				StreamReader reader(payload);
 
-			uint32_t commandId, arrivalId;
-			reader>>commandId>>arrivalId;
+				uint32_t commandId, arrivalId;
+				reader>>commandId>>arrivalId;
 
-			bool isPassiveArrival = givenHandlers->find(commandId)!=givenHandlers->end();
-			if (isPassiveArrival) {
-				GivenArrivalHandler& handler = givenHandlers->at(commandId);
-				auto counterParts = handler();
-				Arrival* specialResponse = get<0>(counterParts);
-				const Departure* departure = get<1>(counterParts);
-				ResponseAction& arrivalAction = get<2>(counterParts);
-				ResponseAction& departureAction = get<3>(counterParts);
+				bool isPassiveArrival = givenHandlers->find(commandId)!=givenHandlers->end();
+				if (isPassiveArrival) {
+					GivenArrivalHandler& handler = givenHandlers->at(commandId);
+					auto counterParts = handler();
+					Arrival* specialResponse = get<0>(counterParts);
+					const Departure* departure = get<1>(counterParts);
+					ResponseAction& arrivalAction = get<2>(counterParts);
+					ResponseAction& departureAction = get<3>(counterParts);
 
-				specialResponse->deserialize(reader);
-				arrivalAction(true, "");
+					specialResponse->deserialize(reader);
+					arrivalAction(true, "");
 
-				exchangeLock->lock([this, arrivalId, departure, &departureAction](){
-					departures->push_back(make_tuple(arrivalId, departure, departureAction));
-				});
-				::ReleaseSemaphore(departuresSemaphore, 1, NULL);
-			} else {
-				pair<Arrival*, ResponseAction> responsePair;
-				exchangeLock->lock([this, &responsePair, arrivalId](){
-					responsePair = seqid2arrival->at(arrivalId);
-					seqid2arrival->erase(arrivalId);
-				});
+					exchangeLock->lock([this, arrivalId, departure, &departureAction](){
+						departures->push_back(make_tuple(arrivalId, departure, departureAction));
+					});
+					::ReleaseSemaphore(departuresSemaphore, 1, NULL);
+				} else {
+					pair<Arrival*, ResponseAction> responsePair;
+					exchangeLock->lock([this, &responsePair, arrivalId](){
+						responsePair = seqid2arrival->at(arrivalId);
+						seqid2arrival->erase(arrivalId);
+					});
 
-				Arrival* arrival = responsePair.first;
-				ResponseAction action = responsePair.second;
-				arrival->deserialize(reader);
-				action(true, "");
-			}
+					Arrival* arrival = responsePair.first;
+					ResponseAction action = responsePair.second;
+					arrival->deserialize(reader);
+					action(true, "");
+				}			
+			});
 		}
 	}
 
@@ -193,43 +179,5 @@ namespace comm {
 	DWORD Communicator::receivingThreadFunc(LPVOID self) {
 		((Communicator*)self)->handleReceiving();
 		return 0;
-	}
-
-	bool Communicator::setupSocket() {
-		struct sockaddr_in addr;
-
-		tcpSocket = socket( AF_INET, SOCK_STREAM, 0);
-
-		addr.sin_family = AF_INET;
-		addr.sin_port   = htons( port);
-		addr.sin_addr.s_addr   = inet_addr(endpoint);
-
-		int errCode = connect(tcpSocket, (struct sockaddr *)&addr, sizeof( addr));
-		return errCode==0;
-	}
-
-	template<class PayloadType>
-	bool process(SOCKET tcpSocket, PayloadType payload, size_t total, int (__stdcall *handler)(SOCKET, PayloadType, int, int)) {
-		size_t remain = total;
-		bool success = true;
-		while(success && remain>0) {
-			int handled = handler(tcpSocket, payload + total - remain, remain, 0);
-			if (handled>0) {
-				remain -= handled;
-			} else {
-				remain = 0;
-				success = false;
-			}
-		}
-
-		return success;
-	}
-
-	bool Communicator::sendTrunk( const uint8_t* payload, size_t total ) {
-		return process(tcpSocket, (const char*)payload, total, &::send);
-	}
-
-	bool Communicator::receiveTrunk( uint8_t* buff, size_t total ) {
-		return process(tcpSocket, (char*)buff, total, &::recv);
 	}
 }
