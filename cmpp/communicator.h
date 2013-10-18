@@ -45,7 +45,7 @@ namespace comm {
 		typedef function<void(bool, const string&)> ResponseAction; 
 		typedef function< tuple<Arrival*, const Departure*, ResponseAction, ResponseAction>() > GivenArrivalHandler;
 	public:
-		Communicator(const char* endpoint, int port);
+		Communicator(const char* endpoint, int port, long maxLives = 3, float timeout = 60.0);
 		~Communicator();
 
 		bool open();

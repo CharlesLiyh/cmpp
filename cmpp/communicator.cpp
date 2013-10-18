@@ -13,7 +13,7 @@ namespace comm {
 	//////////////////////////////////////////////////////////////////////////
 	// Communicator
 
-	Communicator::Communicator(const char* endpoint, int port){
+	Communicator::Communicator(const char* endpoint, int port, long maxLives, float timeout){
 		seqid2arrival = new map< uint32_t, pair<Arrival*, ResponseAction> >;
 		givenHandlers = new map<uint32_t, GivenArrivalHandler>;
 		departures = new list< tuple<uint32_t, const Departure*, ResponseAction> >;

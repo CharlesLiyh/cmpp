@@ -29,7 +29,7 @@ namespace cmpp {
 
 	class CMPP_API MessageGateway {
 	public:
-		MessageGateway(Communicator* communicator, SMSAcceptor smsAcceptor, ReportAcceptor reportAcceptor, long maxLives = 3, float timeout = 60.0, float heartbeatInterval = 180.0);
+		MessageGateway(Communicator* communicator, SMSAcceptor smsAcceptor, ReportAcceptor reportAcceptor, float heartbeatInterval = 180.0);
 		~MessageGateway();
 
 		void open(const SPID *spid, CommonAction action);
@@ -51,8 +51,6 @@ namespace cmpp {
 		DeliveryAcceptors* acceptors;
 		void* heartbeatThreadHandle;
 		void* heartbeatEvent;
-		long maxLives;
-		float timeout;
 		float heartbeatInterval;
 	};
 }

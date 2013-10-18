@@ -43,7 +43,7 @@ TEST_F(CMPPTests, aTest) {
 	Communicator commObj("127.0.0.1", 7890);
 	MessageGateway gateWay(&commObj, 
 		[](const char* src, const char*dst, const char* text){ printf("[SMS Report]src:%s dst:%s text:%s\n", src, dst, text); }, 
-		[](uint64_t msgId, DeliverCode code){ printf("[Delivery Report]msgId:%PRIu64 code:%d\n", code);}, 3, 60, 3 );
+		[](uint64_t msgId, DeliverCode code){ printf("[Delivery Report]msgId:%PRIu64 code:%d\n", code);}, 3);
 	SPID* spid = new SPID("403037", "1234");
 	gateWay.open(spid, [spid](bool verfied, const char* message){
 		delete spid;

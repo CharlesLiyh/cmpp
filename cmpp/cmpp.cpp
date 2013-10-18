@@ -1,6 +1,4 @@
 #include "stdafx.h"
-#include <cstdint>
-#include <memory>
 #include "cmpp.h"
 #include "communicator.h" 
 #include "connect.h"
@@ -8,19 +6,24 @@
 #include "submit.h"
 #include "delivery.h"
 #include "active.h"
+#include <cstdint>
+#include <memory>
 
 using namespace std;
 using namespace comm;
 
 namespace cmpp {
+	// Active 和 ActiveEcho没有任何有意义的数据，所以整个库都可以直接使用这两个静态对象
+	// 来进行数据的整编和解编，以减少内存的申请和释放行为，提高运行效率
+	static Active singleActive;
+	static ActiveEcho singleActiveEcho;
+
 	struct DeliveryAcceptors {
 		SMSAcceptor smsAcceptor;
 		ReportAcceptor reportAcceptor;
 	};
 
-	MessageGateway::MessageGateway(Communicator* aCommunicator, SMSAcceptor sAcceptor, ReportAcceptor rAcceptor, long lives, float timeoutVal, float interval) {
-		maxLives = lives;
-		timeout = timeoutVal;
+	MessageGateway::MessageGateway(Communicator* aCommunicator, SMSAcceptor sAcceptor, ReportAcceptor rAcceptor, float interval) {
 		heartbeatInterval = interval;
 		spid = nullptr;
 
@@ -97,12 +100,12 @@ namespace cmpp {
 			Delivery* delivery = new Delivery;
 			DeliveryResponse* deliveryRes = new DeliveryResponse;
 			return make_tuple(delivery, deliveryRes, 
-				// arrival action 这个action会在接收到Delivery包时执行
+				// arrival action 在接收到Delivery包时执行
 				[this, delivery, deliveryRes](bool, const string&) {
 					deliveryRes->setMsgId(delivery->messageId());
 					delivery->dispatch(acceptors->smsAcceptor, acceptors->reportAcceptor);
 			},
-				// departure action, 下面的action会在deliveryRes发送完成后执行
+				// departure action, 在deliveryRes发送完成后执行
 				[delivery, deliveryRes](bool, const string&) {
 					delete delivery;
 					delete deliveryRes;
@@ -113,42 +116,31 @@ namespace cmpp {
 
 	void MessageGateway::registerActiveHandler() {
 		communicator->registerPassiveArrivalHandler(Active::CommandId, [this]()->tuple<Arrival*, const Departure*, Communicator::ResponseAction, Communicator::ResponseAction> {
-			Active* active = new Active;
-			ActiveEcho* activeEcho = new ActiveEcho;
-			return make_tuple(active, activeEcho, 
-				// arrival action 这个action会在接收到Delivery包时执行
-				[this, active, activeEcho](bool, const string&) {
+			return make_tuple(&singleActive, &singleActiveEcho, 
+				// arrival action，在Active数据包被动接收时执行
+				[this](bool, const string&) {
 #pragma message(__TODO__"refresh last active time")
 			},
-				// departure action, 下面的action会在deliveryRes发送完成后执行
-				[active, activeEcho](bool, const string&) {
-					delete active;
-					delete activeEcho;
-			}
+				// departure action, 在deliveryRes发送完成后执行
+				[](bool, const string&) {
+					// 因为singleActive、singleActiveEcho都是全局的，所以不需要释放
+				}
 			);
 		});
 	}
 
 	void MessageGateway::keepActive() {
-		long lives = maxLives;
-		const DWORD interval = (DWORD)(heartbeatInterval * 1000.0);
-		static Active beat;
-		static ActiveEcho echo;
-		while(lives>0) {
-			DWORD eventIdx = ::WaitForSingleObject(heartbeatEvent, interval);
-			if (eventIdx==WAIT_TIMEOUT) {
-				long remainLives = InterlockedDecrement(&lives);
+		function<bool(DWORD)> timeToBeat = [](DWORD eventIdx){ return eventIdx==WAIT_TIMEOUT; };
 
-				if (remainLives>0) {
-					communicator->exchange(&beat, &echo,[this, &lives](bool, const string&) {
-						// 一旦收到心跳回应包，则重置心跳状态，恢复‘生命活力’
-						::InterlockedExchange(&lives, maxLives);
-					});
-				}
-			}
-			else {
-				eventIdx -= WAIT_OBJECT_0;
-			}
+		const DWORD intervalSec = (DWORD)(heartbeatInterval * 1000.0);
+		bool toKeepAlive = true;
+
+		// 当定时器到时，且心跳发送正常时，发送下一个链路检测包
+		while( toKeepAlive && timeToBeat(::WaitForSingleObject(heartbeatEvent, intervalSec)) ) {
+			communicator->exchange(&singleActive, &singleActiveEcho,[this, &toKeepAlive](bool success, const string&) {
+				// 如果心跳发送失败，则置toKeepAlive为false，停止心跳循环
+				toKeepAlive = success;
+			});
 		}
 	}
 
