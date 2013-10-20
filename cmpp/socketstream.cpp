@@ -68,7 +68,7 @@ namespace comm {
 	}
 
 	bool SocketStream::send( const void* payload, size_t size ) {
-		dump((const uint8_t*)payload, size, "[Departure]");
+		//dump((const uint8_t*)payload, size, "[Departure]");
 
 		uint32_t sizeWrapper;
 		sizeWrapper = htonl(size + sizeof(sizeWrapper));
@@ -84,7 +84,7 @@ namespace comm {
 
 			auto_ptr<char> buffer(new char[size]);
 			if (process(tcpSocket, buffer.get(), size, ::recv)) {
-				dump((const uint8_t*)buffer.get(), size, "[Arrival]");
+				//dump((const uint8_t*)buffer.get(), size, "[Arrival]");
 
 				callback((const uint8_t*)buffer.get(), size);
 				return true;
