@@ -35,7 +35,7 @@ namespace cmpp {
 		MessageGateway(Protocol20* protocol, SMSAcceptor smsAcceptor, ReportAcceptor reportAcceptor, ErrorReporter errorReporter, float heartbeatInterval = 180.0);
 		~MessageGateway();
 
-		void open(const SPID *spid, CommonAction action);
+		bool open(const SPID *spid, CommonAction action);
 		void close();
 		void send(const MessageTask* task, SubmitAction action);
 

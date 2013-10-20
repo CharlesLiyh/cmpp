@@ -117,7 +117,7 @@ namespace comm {
 	}
 
 	pair<const uint8_t*,size_t> Communicator::buildPayload(const Departure& departure, uint32_t seqId) {
-		uint8_t buffer[1024] = {0};
+		uint8_t buffer[2048] = {0};
 
 		StreamWriter writer(buffer);
 		writer<<departure.commandId()<<seqId;
@@ -134,7 +134,7 @@ namespace comm {
 	void Communicator::exchange(const Departure* departure, Arrival* arrival, ResponseAction action) {
 		// 如果请求发送的行为发生在错误已经发生的情况下，则应直接忽略该请求，并告知失败
 		if (errorAlreadyReported) {
-			action(false, "");
+			action(false);
 			return;
 		}
 
@@ -148,7 +148,7 @@ namespace comm {
 			// 此时，由于并未真正发送，所以也就不需要处理任何定时器相关的事宜
 
 			seqid2arrival.insert(make_pair(departureId, make_pair(arrival, action)));
-			activeDepartures.push_back(make_tuple(departureId, departure, [](bool, const string&){}));
+			activeDepartures.push_back(make_tuple(departureId, departure, [](bool){}));
 		});
 
 		::ReleaseSemaphore(activeDepartSem, 1, NULL);
@@ -160,7 +160,7 @@ namespace comm {
 		givenHandlers.insert(make_pair(cmdId, handler));
 	}
 
-	bool Communicator::send(tuple<uint32_t, const Departure*, ResponseAction>& departTuple) {
+	bool Communicator::send(DepartureElements& departTuple) {
 		uint32_t departId = get<0>(departTuple);
 		const Departure* departure = get<1>(departTuple);
 		ResponseAction action = get<2>(departTuple);
@@ -173,15 +173,15 @@ namespace comm {
 	}
 
 	bool Communicator::sendPassiveDeparture() {
-		tuple<uint32_t, const Departure*, ResponseAction> departTuple;
-		passiveDepartLock.lock([this, &departTuple]{
-			departTuple = passiveDepartures.front();
+		DepartureElements departElms;
+		passiveDepartLock.lock([this, &departElms]{
+			departElms = passiveDepartures.front();
 			passiveDepartures.pop_front();
 		});
 
 		// 这里只需要对服务器所发送的请求包进行响应，不需要验证该响应
 		// 是否被服务器所接受，所以无需任何定时器的处理
-		return send(departTuple);
+		return send(departElms);
 	}
 
 	void Communicator::activeDepartureTimer(HANDLE timer) {
@@ -192,24 +192,24 @@ namespace comm {
 
 	bool Communicator::sendActiveDeparture() {
 		// 当有待发送的用户请求，且有定时器可用时（发送窗口），触发一次主动请求的发送行为
-		tuple<uint32_t, const Departure*, ResponseAction> departTuple;
+		DepartureElements departElms;
 		HANDLE timer;
-		departuresLock.lock([this, &departTuple, &timer]{
-			departTuple = activeDepartures.front();
+		departuresLock.lock([this, &departElms, &timer]{
+			departElms = activeDepartures.front();
 			activeDepartures.pop_front();
 
 			timer = freeTimers.front();
 			freeTimers.pop_front();
 
-			uint32_t departId = get<0>(departTuple);
-			const Departure* departure = get<1>(departTuple);
+			uint32_t departId = get<0>(departElms);
+			const Departure* departure = get<1>(departElms);
 
 			// 下面立刻会执行一次发送任务，所以设置的初始剩余发送次数为mavLives - 1
 			seqid2retryStuffs.insert(make_pair(departId, make_pair(timer, maxLives -1)));
-			timer2departure.insert(make_pair(timer, departTuple));
+			timer2departure.insert(make_pair(timer, departElms));
 		});
 
-		if (send(departTuple)) {
+		if (send(departElms)) {
 			activeDepartureTimer(timer);
 			return true;
 		}
@@ -256,18 +256,18 @@ namespace comm {
 				HANDLE timer = retryTimers[eventIdx-WAIT_OBJECT_0-2];
 				int remainLives;
 
-				tuple<uint32_t, const Departure*, ResponseAction> departTuple;
-				departuresLock.lock([this, &departTuple, timer, &remainLives](){
-					departTuple = timer2departure[timer];
+				DepartureElements departElms;
+				departuresLock.lock([this, &departElms, timer, &remainLives](){
+					departElms = timer2departure[timer];
 
-					uint32_t departId = get<0>(departTuple);
+					uint32_t departId = get<0>(departElms);
 					pair<HANDLE, int>& timerStuff = seqid2retryStuffs[departId];
 					remainLives = timerStuff.second;
 					timerStuff.second -= 1;					
 				});
 
 				hasDeadDeparture = remainLives <= 0;
-				if (remainLives>0 && send(departTuple)) {
+				if (remainLives>0 && send(departElms)) {
 					activeDepartureTimer(timer);
 				}
 			} else if (errorOccurs(eventIdx)){
@@ -286,15 +286,18 @@ namespace comm {
 			reportError("数据发送失败");
 		}
 
-		static auto notifySendingFailure = [](tuple<uint32_t, const Departure*, ResponseAction>& departTuple) {
-			ResponseAction& action = get<2>(departTuple);
-			action(false, "");
+		static auto notifySendingFailure = [](DepartureElements& elements) {
+			ResponseAction& action = get<2>(elements);
+			action(false);
 		};
 
 		// 对于所有仍然没有发送成功的任务，执行它们对应的响应action，使得它们有机会释放
 		// 对应的资源
 		for_each(activeDepartures.begin(), activeDepartures.end(), notifySendingFailure);
+		activeDepartures.swap( list<DepartureElements>() );
+
 		for_each(passiveDepartures.begin(), passiveDepartures.end(), notifySendingFailure);
+		passiveDepartures.swap( list<DepartureElements>() );
 
 		if (!stopAllStuffs) {
 			stopStuffs();
@@ -377,7 +380,7 @@ namespace comm {
 			ResponseAction action = responsePair.second;
 			StreamReader payloadReader(payload );
 			arrival->deserialize(payloadReader);
-			action(true, "");
+			action(true);
 		}
 		// else 如果找不到对应的departure则认为是重复的数据包，直接丢弃即可
 	}
@@ -392,7 +395,7 @@ namespace comm {
 
 		StreamReader reader(payload);
 		specialResponse->deserialize(reader);
-		arrivalAction(true, "");
+		arrivalAction(true);
 
 		passiveDepartLock.lock([this, arrivalId, departure, &departureAction](){
 			passiveDepartures.push_back(make_tuple(arrivalId, departure, departureAction));

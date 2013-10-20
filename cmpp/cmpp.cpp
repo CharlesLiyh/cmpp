@@ -39,26 +39,31 @@ namespace cmpp {
 
 	MessageGateway::~MessageGateway() {
 		delete acceptors;
-		delete spid;
 		protocol->releaseObject(communicator);
 	}
 
-	void MessageGateway::open(const SPID* account, CommonAction action) {
+	bool MessageGateway::open(const SPID* account, CommonAction action) {
 		spid = _strdup(account->username());
-		communicator->open([this](const string& message){
+
+		auto stopHeartbeatWhenErrorOccurs = [this](const string& message){
 			acceptors->errorReporter(message.c_str());
 			stopHeartbeat();
 
 			// 即使communicator发生了异常，MessageGateway也不应该对自身执行close
 			// 因为这样会导致线程对自身调用‘结束等待’过程，近而造成死锁。
-		});
+		};
 
-		registerDeliveriesHandler(); 
-		registerActiveHandler();
-		authenticate(account, action);
+		if (communicator->open(stopHeartbeatWhenErrorOccurs)) {
+			registerDeliveriesHandler(); 
+			registerActiveHandler();
+			authenticate(account, action);
 
-		heartbeatStopEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
-		heartbeatThreadHandle = ::CreateThread(NULL, 0, heartbeatThread, this, 0, NULL);
+			heartbeatStopEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+			heartbeatThreadHandle = ::CreateThread(NULL, 0, heartbeatThread, this, 0, NULL);
+			return true;
+		}
+
+		return false;
 	}
 
 	void MessageGateway::close() {
@@ -77,7 +82,7 @@ namespace cmpp {
 		static Terminate request;
 		static TerminateResponse response;
 
-		communicator->exchange(&request, &response, [this, doneEvent](bool, const string& message) {
+		communicator->exchange(&request, &response, [this, doneEvent](bool) {
 			::SetEvent(doneEvent);
 		});
 
@@ -86,14 +91,16 @@ namespace cmpp {
 		::WaitForSingleObject(doneEvent, INFINITE);
 
 		communicator->close();
+		delete spid;
 	}
 
 	void MessageGateway::send( const MessageTask* task, SubmitAction action ) {
 		SubmitSMS* request = new SubmitSMS(task, spid);
 		SubmitSMSResponse* response = new SubmitSMSResponse;
 
-		communicator->exchange(request, response, [request, response, action](bool, const string& message) {
-			action(response->isSuccess(), response->reason().c_str(), response->messageId());
+		communicator->exchange(request, response, [request, response, action](bool success) {
+			if (success)
+				action(response->isSuccess(), response->reason().c_str(), response->messageId());
 
 			delete request;
 			delete response;
@@ -103,8 +110,10 @@ namespace cmpp {
 	void MessageGateway::authenticate( const SPID* account, CommonAction& action ) {
 		Connect* request = new Connect(account, 1380813704);
 		ConnectResponse* response = new ConnectResponse();
-		communicator->exchange(request, response, [this, account, request, response, action](bool success, const string& failure){
-			action(response->isVerified(), response->errorMessage().c_str());
+		communicator->exchange(request, response, [this, account, request, response, action](bool success){
+			// success 为 false时，意味着无法处理登录请求，所以不进行数据通告
+			if (success)
+				action(response->isVerified(), response->errorMessage().c_str());
 
 			delete request;
 			delete response;
@@ -117,12 +126,15 @@ namespace cmpp {
 			DeliveryResponse* deliveryRes = new DeliveryResponse;
 			return make_tuple(delivery, deliveryRes, 
 				// arrival action 在接收到Delivery包时执行
-				[this, delivery, deliveryRes](bool, const string&) {
-					deliveryRes->setMsgId(delivery->messageId());
-					delivery->dispatch(acceptors->smsAcceptor, acceptors->reportAcceptor);
+				[this, delivery, deliveryRes](bool success) {
+					// success 为 false时，意味着无法处理登录请求，所以不进行数据通告
+					if (success) {
+						deliveryRes->setMsgId(delivery->messageId());
+						delivery->dispatch(acceptors->smsAcceptor, acceptors->reportAcceptor);
+					}
 			},
 				// departure action, 在deliveryRes发送完成后执行
-				[delivery, deliveryRes](bool, const string&) {
+				[delivery, deliveryRes](bool) {
 					delete delivery;
 					delete deliveryRes;
 			}
@@ -134,12 +146,9 @@ namespace cmpp {
 		communicator->registerPassiveArrivalHandler(Active::CommandId, [this]()->tuple<Arrival*, const Departure*, Communicator::ResponseAction, Communicator::ResponseAction> {
 			return make_tuple(&sharedActive, &sharedActiveEcho, 
 				// arrival action，在Active数据包被动接收时执行
-				[this](bool, const string&) {
-			},
+				[](bool) {},
 				// departure action, 在deliveryRes发送完成后执行
-				[](bool, const string&) {
-					// 因为singleActive、singleActiveEcho都是全局的，所以不需要释放
-				}
+				[](bool) {}
 			);
 		});
 	}
@@ -147,13 +156,12 @@ namespace cmpp {
 	void MessageGateway::keepActive() {
 		bool toKeepAlive = true;
 		map< DWORD, function<void()> >actions;
-		actions[WAIT_OBJECT_0] = [this, &toKeepAlive]() {
+		actions[WAIT_OBJECT_0] = [&toKeepAlive]() {
 			toKeepAlive = false;
 		};
 
-		actions[WAIT_TIMEOUT] = [this, &toKeepAlive](){
-			communicator->exchange(&sharedActive, &sharedActiveEcho,[this](bool success, const string&) {
-			});
+		actions[WAIT_TIMEOUT] = [this](){
+			communicator->exchange(&sharedActive, &sharedActiveEcho,[this](bool) {});
 		};
 
 		const DWORD intervalSec = (DWORD)(heartbeatInterval * 1000.0);

@@ -39,9 +39,10 @@ namespace comm {
 
 	class Communicator {
 	public:
-		typedef function<void(bool, const string&)> ResponseAction; 
-		typedef function< tuple<Arrival*, const Departure*, ResponseAction, ResponseAction>() > GivenArrivalHandler;
+		typedef function<void(bool)> ResponseAction; 
 		typedef function<void(const string&)> ErrorReporter;
+		typedef function< tuple<Arrival*, const Departure*, ResponseAction, ResponseAction>() > GivenArrivalHandler;
+		typedef tuple<uint32_t, const Departure*, ResponseAction> DepartureElements;
 
 	public:
 		Communicator(const char* endpoint, int port, size_t sendingWndSize=16, int maxLives = 3, double timeout = 60.0);
@@ -56,7 +57,7 @@ namespace comm {
 		void exchange(const Departure* departure, Arrival* arrival, ResponseAction action);
 
 	private:
-		bool send(tuple<uint32_t, const Departure*, ResponseAction>& departTuple);
+		bool send(DepartureElements& departTuple);
 		bool sendActiveDeparture();
 		bool sendPassiveDeparture();
 		void activeDepartureTimer(HANDLE timer);
@@ -90,8 +91,8 @@ namespace comm {
 
 		map< uint32_t, GivenArrivalHandler >givenHandlers;
 		map< uint32_t, pair<Arrival*, ResponseAction> >seqid2arrival;
-		list< tuple<uint32_t, const Departure*, ResponseAction> >activeDepartures;
-		list< tuple<uint32_t, const Departure*, ResponseAction> >passiveDepartures;
+		list<DepartureElements>activeDepartures;
+		list<DepartureElements>passiveDepartures;
 
 		AccessLock departuresLock;
 		HANDLE activeDepartSem;
@@ -107,7 +108,7 @@ namespace comm {
 		size_t timersCount;
 		int maxLives;
 		map<uint32_t, pair<HANDLE, int> > seqid2retryStuffs;
-		map< HANDLE, tuple<uint32_t, const Departure*, ResponseAction> > timer2departure;
+		map<HANDLE, DepartureElements> timer2departure;
 		list<HANDLE> freeTimers;
 	};
 }

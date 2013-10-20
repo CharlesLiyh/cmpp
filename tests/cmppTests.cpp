@@ -49,9 +49,11 @@ TEST_F(CMPPTests, aTest) {
 		[closeEvent](const char* message) { ::SetEvent(closeEvent); },
 		3);
 	SPID* spid = new SPID("403037", "1234");
-	gateWay.open(spid, [spid](bool verfied, const char* message){
+	if (!gateWay.open(spid, [spid](bool verfied, const char* message){
 		delete spid;
-	});
+	})) {
+		return;
+	}
 
 	MessageTask* task = new MessageTask("1234567890", "13926136535", "Hello cmpp");
 	gateWay.send(task, [task](bool accepted, const char* failure, uint64_t id) {
