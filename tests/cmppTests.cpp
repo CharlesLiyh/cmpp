@@ -1,13 +1,13 @@
 #include "stdafx.h"
+#include "gtest/gtest.h"
 #include "cmpp/cmpp.h"
 #include "cmpp/conceptions.h"
-#include "cmpp/communicator.h"
-#include "gtest/gtest.h"
+#include "cmpp/Protocol20.h"
 #include <windows.h>
 #include <string>
 #include <vector>
-
-using namespace comm;
+#include <map>
+#include <memory>
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -40,10 +40,14 @@ class CMPPTests : public Test {
 };
 
 TEST_F(CMPPTests, aTest) {
-	Communicator commObj("127.0.0.1", 7890);
-	MessageGateway gateWay(&commObj, 
+	HANDLE closeEvent = ::CreateEventA(NULL, TRUE, FALSE, "cmpp.stopTests");
+
+	Protocol20 v20("127.0.0.1", 7890);
+	MessageGateway gateWay(&v20, 
 		[](const char* src, const char*dst, const char* text){ printf("[SMS Report]src:%s dst:%s text:%s\n", src, dst, text); }, 
-		[](uint64_t msgId, DeliverCode code){ printf("[Delivery Report]msgId:%PRIu64 code:%d\n", code);}, 3);
+		[](uint64_t msgId, DeliverCode code){ printf("[Delivery Report]msgId:%PRIu64 code:%d\n", code);}, 
+		[closeEvent](const char* message) { ::SetEvent(closeEvent); },
+		3);
 	SPID* spid = new SPID("403037", "1234");
 	gateWay.open(spid, [spid](bool verfied, const char* message){
 		delete spid;
@@ -54,7 +58,6 @@ TEST_F(CMPPTests, aTest) {
 		delete task;
 	});
 
-	HANDLE e = CreateEvent(NULL, TRUE, FALSE, NULL);
-	WaitForSingleObject(e, INFINITE);
+	::WaitForSingleObject(closeEvent, INFINITE);
 	gateWay.close();
 }

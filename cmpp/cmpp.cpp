@@ -1,4 +1,6 @@
 #include "stdafx.h"
+#include <cstdint>
+#include <memory>
 #include "cmpp.h"
 #include "communicator.h" 
 #include "connect.h"
@@ -6,8 +8,7 @@
 #include "submit.h"
 #include "delivery.h"
 #include "active.h"
-#include <cstdint>
-#include <memory>
+#include "Protocol20.h"
 
 using namespace std;
 using namespace comm;
@@ -15,45 +16,54 @@ using namespace comm;
 namespace cmpp {
 	// Active 和 ActiveEcho没有任何有意义的数据，所以整个库都可以直接使用这两个静态对象
 	// 来进行数据的整编和解编，以减少内存的申请和释放行为，提高运行效率
-	static Active singleActive;
-	static ActiveEcho singleActiveEcho;
+	static Active sharedActive;
+	static ActiveEcho sharedActiveEcho;
 
 	struct DeliveryAcceptors {
 		SMSAcceptor smsAcceptor;
 		ReportAcceptor reportAcceptor;
+		ErrorReporter errorReporter;
 	};
 
-	MessageGateway::MessageGateway(Communicator* aCommunicator, SMSAcceptor sAcceptor, ReportAcceptor rAcceptor, float interval) {
+	MessageGateway::MessageGateway(Protocol20* proto, SMSAcceptor sAcceptor, ReportAcceptor rAcceptor, ErrorReporter errorReporter, float interval) {
 		heartbeatInterval = interval;
 		spid = nullptr;
 
-		communicator = aCommunicator;
+		protocol = proto;
+		communicator = proto->createCommunicator();
 		acceptors = new DeliveryAcceptors;
 		acceptors->smsAcceptor = sAcceptor;
 		acceptors->reportAcceptor = rAcceptor;
+		acceptors->errorReporter = errorReporter;
 	}
 
 	MessageGateway::~MessageGateway() {
 		delete acceptors;
 		delete spid;
+		protocol->releaseObject(communicator);
 	}
 
 	void MessageGateway::open(const SPID* account, CommonAction action) {
 		spid = _strdup(account->username());
-		communicator->open();
+		communicator->open([this](const string& message){
+			acceptors->errorReporter(message.c_str());
+			stopHeartbeat();
+
+			// 即使communicator发生了异常，MessageGateway也不应该对自身执行close
+			// 因为这样会导致线程对自身调用‘结束等待’过程，近而造成死锁。
+		});
 
 		registerDeliveriesHandler(); 
 		registerActiveHandler();
 		authenticate(account, action);
 
-		heartbeatEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
-		DWORD pid;
-		heartbeatThreadHandle = ::CreateThread(NULL, 0, heartbeatThread, this, 0, &pid);
+		heartbeatStopEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+		heartbeatThreadHandle = ::CreateThread(NULL, 0, heartbeatThread, this, 0, NULL);
 	}
 
 	void MessageGateway::close() {
-		Terminate* request = new Terminate();
-		TerminateResponse* response = new TerminateResponse();
+		stopHeartbeat();
+		::WaitForSingleObject(heartbeatThreadHandle, INFINITE);
 
 		// close必须是同步的，原因如下：
 		// 如果MessageGateway的内部是单线程的，那么close一定是同步的，无须解释
@@ -61,14 +71,20 @@ namespace cmpp {
 		// 造成死循环。所以内部线程的结束一定是由MessageGateway所使用的线程之外的线程（例如主线程）
 		// 来监控的。这意味着，close对于调用者来说，一定是阻塞的。
 		HANDLE doneEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
-		communicator->exchange(request, response, [request, response, this, doneEvent](bool, const string& message) {
-			delete request;
-			delete response;
 
+		// Terminate数据包没有任何有意义的数据，即使多线程环境下也可以同时访问，所以定义为静态
+		// 对象即可
+		static Terminate request;
+		static TerminateResponse response;
+
+		communicator->exchange(&request, &response, [this, doneEvent](bool, const string& message) {
 			::SetEvent(doneEvent);
 		});
 
+		// 仅当Terminate的请求被处理完成时（有可能处理失败，当连接首先断开的情形下，但无论哪种情况，
+		// 该请求必须被执行）
 		::WaitForSingleObject(doneEvent, INFINITE);
+
 		communicator->close();
 	}
 
@@ -116,10 +132,9 @@ namespace cmpp {
 
 	void MessageGateway::registerActiveHandler() {
 		communicator->registerPassiveArrivalHandler(Active::CommandId, [this]()->tuple<Arrival*, const Departure*, Communicator::ResponseAction, Communicator::ResponseAction> {
-			return make_tuple(&singleActive, &singleActiveEcho, 
+			return make_tuple(&sharedActive, &sharedActiveEcho, 
 				// arrival action，在Active数据包被动接收时执行
 				[this](bool, const string&) {
-#pragma message(__TODO__"refresh last active time")
 			},
 				// departure action, 在deliveryRes发送完成后执行
 				[](bool, const string&) {
@@ -130,22 +145,33 @@ namespace cmpp {
 	}
 
 	void MessageGateway::keepActive() {
-		function<bool(DWORD)> timeToBeat = [](DWORD eventIdx){ return eventIdx==WAIT_TIMEOUT; };
+		bool toKeepAlive = true;
+		map< DWORD, function<void()> >actions;
+		actions[WAIT_OBJECT_0] = [this, &toKeepAlive]() {
+			toKeepAlive = false;
+		};
+
+		actions[WAIT_TIMEOUT] = [this, &toKeepAlive](){
+			communicator->exchange(&sharedActive, &sharedActiveEcho,[this](bool success, const string&) {
+			});
+		};
 
 		const DWORD intervalSec = (DWORD)(heartbeatInterval * 1000.0);
-		bool toKeepAlive = true;
-
 		// 当定时器到时，且心跳发送正常时，发送下一个链路检测包
-		while( toKeepAlive && timeToBeat(::WaitForSingleObject(heartbeatEvent, intervalSec)) ) {
-			communicator->exchange(&singleActive, &singleActiveEcho,[this, &toKeepAlive](bool success, const string&) {
-				// 如果心跳发送失败，则置toKeepAlive为false，停止心跳循环
-				toKeepAlive = success;
-			});
+		while( toKeepAlive) {
+			 DWORD code = ::WaitForSingleObject(heartbeatStopEvent, intervalSec);
+			 actions[code]();
 		}
+
+		printf("Heartbeat stopped\n");
 	}
 
 	unsigned long __stdcall MessageGateway::heartbeatThread( void* self ) {
 		((MessageGateway*)self)->keepActive();
 		return 0;
+	}
+
+	void MessageGateway::stopHeartbeat() {
+		::SetEvent(heartbeatStopEvent);
 	}
 }

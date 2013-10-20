@@ -1,9 +1,29 @@
 #include "stdafx.h"
 #include "socketstream.h"
+#include "AccessLock.h"
 #include <memory>
 using namespace std;
 
+extern AccessLock DumpLock;
+
 namespace comm {
+	void dump(const uint8_t* bytes, size_t size, const char* prefixMsg) {
+		// 收发线程会异步访问dump，相互干扰输出的日志文本，所以
+		// 使用互斥锁进行保护
+		static const int BytesPerLine = 20;
+
+		DumpLock.lock([prefixMsg, size, bytes]{
+			printf("%s size:%d\n", prefixMsg, size);
+			for (size_t i=0; i<size; ++i) {
+				printf("%02X ", bytes[i]);
+				if ( ((i+1)%BytesPerLine)==0 ) {
+					printf("\n");
+				}
+			}
+			printf( size%BytesPerLine==0 ? "\n" : "\n\n");
+		});
+	}
+
 	template<class PayloadType>
 	bool process(SOCKET tcpSocket, PayloadType payload, size_t total, int (__stdcall *handler)(SOCKET, PayloadType, int, int)) {
 		size_t remain = total;
@@ -48,6 +68,8 @@ namespace comm {
 	}
 
 	bool SocketStream::send( const void* payload, size_t size ) {
+		dump((const uint8_t*)payload, size, "[Departure]");
+
 		uint32_t sizeWrapper;
 		sizeWrapper = htonl(size + sizeof(sizeWrapper));
 		return process(tcpSocket, (const char*)&sizeWrapper, sizeof(sizeWrapper), &::send)
@@ -62,6 +84,8 @@ namespace comm {
 
 			auto_ptr<char> buffer(new char[size]);
 			if (process(tcpSocket, buffer.get(), size, ::recv)) {
+				dump((const uint8_t*)buffer.get(), size, "[Arrival]");
+
 				callback((const uint8_t*)buffer.get(), size);
 				return true;
 			}
