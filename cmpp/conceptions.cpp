@@ -52,4 +52,64 @@ namespace cmpp {
 	int MessageTask::textLength() const {
 		return strlen(text);
 	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Statistics
+
+	Statistics::Statistics() {
+		tillDate = nullptr;
+		serviceCode = nullptr;
+	}
+
+	Statistics::~Statistics() {
+		delete tillDate;
+		delete serviceCode;
+	}
+
+	void Statistics::fillsWith( const char* date, const char* service, uint32_t mAmount, uint32_t uAmount, uint32_t sr, uint32_t qr, uint32_t fr, uint32_t ss, uint32_t qs, uint32_t fs ) {
+		tillDate = _strdup(date);
+		serviceCode = _strdup(service);
+		msgAmount = mAmount;
+		userAmount = uAmount;
+		succeedRetrans = sr;
+		queuedRetrans = qr;
+		failedRetrans = fr;
+		succeedSent = ss;
+		queuedSent = qs;
+		failedSent = fs;
+	}
+
+	uint32_t Statistics::messageAmountFromSP() const {
+		return msgAmount;
+	}
+
+	uint32_t Statistics::userAmountFromSP() const {
+		return userAmount;
+	}
+
+	uint32_t Statistics::succeedRetransmited() const {
+		return succeedRetrans;
+	}
+
+	uint32_t Statistics::queuedRetransmited() const {
+		return queuedRetrans;
+	}
+
+	uint32_t Statistics::failedRetransmited() const {
+		return failedRetrans;
+	}
+
+	uint32_t Statistics::succeedSentForSP() const {
+		return succeedSent;
+	}
+
+	uint32_t Statistics::queuedSendForSP() const {
+		return queuedSent;
+	}
+
+	uint32_t Statistics::failedSentFoSP() const {
+		return failedSent;
+	}
+
+
 }

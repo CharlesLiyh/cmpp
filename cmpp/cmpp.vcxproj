@@ -76,6 +76,7 @@
   <ItemGroup>
     <ClInclude Include="AccessLock.h" />
     <ClInclude Include="active.h" />
+    <ClInclude Include="cancel.h" />
     <ClInclude Include="cmpp.h" />
     <ClInclude Include="communicator.h" />
     <ClInclude Include="conceptions.h" />
@@ -83,6 +84,7 @@
     <ClInclude Include="delivery.h" />
     <ClInclude Include="md5.h" />
     <ClInclude Include="Protocol20.h" />
+    <ClInclude Include="query.h" />
     <ClInclude Include="serialization.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="submit.h" />
@@ -93,6 +95,7 @@
   <ItemGroup>
     <ClCompile Include="AccessLock.cpp" />
     <ClCompile Include="active.cpp" />
+    <ClCompile Include="cancel.cpp" />
     <ClCompile Include="cmpp.cpp" />
     <ClCompile Include="communicator.cpp" />
     <ClCompile Include="conceptions.cpp" />
@@ -108,6 +111,7 @@
     <ClCompile Include="connect.cpp" />
     <ClCompile Include="md5.cpp" />
     <ClCompile Include="Protocol20.cpp" />
+    <ClCompile Include="query.cpp" />
     <ClCompile Include="serialization.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

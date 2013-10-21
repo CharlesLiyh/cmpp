@@ -33,7 +33,8 @@ int _tmain(int argc, _TCHAR* argv[]) {
 				printf("发生异常\n"); 
 			});
 		},
-		3);
+		180.0f
+		);
 
 	HANDLE workEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
 
@@ -56,18 +57,23 @@ int _tmain(int argc, _TCHAR* argv[]) {
 		::WaitForSingleObject(workEvent, INFINITE);
 
 		bool toContinue = true;
+		uint64_t msgId;
 		while(toContinue) {
 			msgLock.lock([](){
-				cout<<"[1]    发送预置消息"<<endl;
-				cout<<"[其它] 停止服务"<<endl;
+				cout<<"[1]\t发送预置消息"<<endl;
+				cout<<"[2]\t取消预置短信发送"<<endl;
+				cout<<"[3]\t按总量查询"<<endl;
+				cout<<"[4]\t按业务查询"<<endl;
+				cout<<"[其它]\t停止服务"<<endl;
 			});
 
 			int choice;
 			cin>>choice;
 			if (choice==1) {
 				MessageTask* task = new MessageTask("1234567890", "13926136535", "Hello cmpp");
-				gateWay.send(task, [task](bool accepted, const char* failure, uint64_t id) {
+				gateWay.send(task, [task, &msgId](bool accepted, const char* failure, uint64_t id) {
 					delete task;
+					msgId = id;
 					msgLock.lock([accepted, failure, id](){
 						if (accepted) {
 							printf("短消息任务已被服务器接受，返回的MSGID为:%u64\n", id);
@@ -76,7 +82,29 @@ int _tmain(int argc, _TCHAR* argv[]) {
 						}
 					});
 				});
-			} else {
+			} else if (choice==2) {
+				gateWay.cancel(msgId, [](bool canceled) {
+					msgLock.lock([canceled]() {
+						if (canceled)
+							cout<<"消息发送任务已被成功取消"<<endl;
+						else
+							cout<<"消息发送任务失败"<<endl;
+					});						
+				});
+			} else if (choice==3) {
+				gateWay.queryForAmounts(2013, 12, 12, [](Statistics& stat) {
+					msgLock.lock([]() {
+						cout<<"成功完成按总量查询的业务"<<endl;
+					});
+				});
+			} else if (choice==4) {
+				gateWay.queryForService(2012, 10, 10, "abcdefghij", [](Statistics& stat) {
+					msgLock.lock([]() {
+						cout<<"成功完成按代码查询的业务"<<endl;
+					});
+				});
+			}
+			else {
 				gateWay.close();
 				toContinue = false;
 			}

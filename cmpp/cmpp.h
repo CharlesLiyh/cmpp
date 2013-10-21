@@ -21,14 +21,18 @@ namespace cmpp {
 
 	class SPID;
 	class MessageTask;
-	struct DeliveryAcceptors;
+	class Query;
+	class QueryResponse;
 	class Protocol20;
+	struct DeliveryAcceptors;
 
 	typedef function<void(bool success, const char* failure)> CommonAction;
 	typedef function<void(const char*)> ErrorReporter;
 	typedef function<void(bool success, const char* failure, uint64_t)> SubmitAction;
 	typedef function<void(const char*, const char*, const char*)> SMSAcceptor;
 	typedef function<void(uint64_t, DeliverCode)> ReportAcceptor;
+	typedef function<void(bool)> SimpleAction;
+	typedef function<void(Statistics& stat)> QueryAction;
 
 	class CMPP_API MessageGateway {
 	public:
@@ -38,6 +42,9 @@ namespace cmpp {
 		bool open(const SPID *spid, CommonAction action);
 		void close();
 		void send(const MessageTask* task, SubmitAction action);
+		void cancel(uint64_t taskId, SimpleAction action);
+		void queryForAmounts(uint32_t year, uint8_t month, uint8_t day, QueryAction action);
+		void queryForService(uint32_t year, uint8_t month, uint8_t day, const char* serviceCode, QueryAction action);
 
 	private:
 		// ∑¿÷πøΩ±¥MessageGateway∂‘œÛ
@@ -48,7 +55,7 @@ namespace cmpp {
 		void authenticate( const SPID* account, CommonAction& action );
 		void registerDeliveriesHandler();
 		void registerActiveHandler();
-
+		void exchangeQuery(Query* request, QueryResponse* res, Statistics* stat, QueryAction act);
 	private:
 		Protocol20* protocol;
 		Communicator* communicator;

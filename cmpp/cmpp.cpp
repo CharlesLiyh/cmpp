@@ -8,7 +8,9 @@
 #include "submit.h"
 #include "delivery.h"
 #include "active.h"
+#include "cancel.h"
 #include "Protocol20.h"
+#include "query.h"
 
 using namespace std;
 using namespace comm;
@@ -107,6 +109,19 @@ namespace cmpp {
 		});
 	}
 
+	void MessageGateway::cancel( uint64_t taskId, SimpleAction action ) {
+		Cancel *request = new Cancel(taskId);
+		CancelResponse* response = new CancelResponse;
+
+		communicator->exchange(request, response, [request, response, action](bool success) {
+			if (success)
+				action(response->isSucceed());
+
+			delete request;
+			delete response;
+		});
+	}
+
 	void MessageGateway::authenticate( const SPID* account, CommonAction& action ) {
 		Connect* request = new Connect(account, 1380813704);
 		ConnectResponse* response = new ConnectResponse();
@@ -181,5 +196,39 @@ namespace cmpp {
 
 	void MessageGateway::stopHeartbeat() {
 		::SetEvent(heartbeatStopEvent);
+	}
+
+	void MessageGateway::exchangeQuery(Query* request, QueryResponse* res, Statistics* stat, QueryAction act) {
+		communicator->exchange(request, res, [stat, act, res, request](bool success) {
+			if (success)
+				act(*stat);
+
+			delete res;
+			delete stat;
+			delete request;
+		});
+	}
+
+	void MessageGateway::queryForAmounts( uint32_t year, uint8_t month, uint8_t day, QueryAction action ) {
+		char dateStr[9];
+		sprintf_s(dateStr, "%4d%02d%02d", year, month, day);
+		Query* request = new Query(dateStr);
+		request->queryForAmounts();
+
+		Statistics* stat = new Statistics;
+		QueryResponse* response = new QueryResponse(stat);
+		exchangeQuery(request, response, stat, action);
+	}
+
+	void MessageGateway::queryForService( uint32_t year, uint8_t month, uint8_t day, const char* serviceCode, QueryAction action ) {
+		char dateStr[9];
+		sprintf_s(dateStr, "%4d%02d%02d", year, month, day);
+		Query* request = new Query(dateStr);
+		request->queryForService(serviceCode);
+
+		Statistics* stat = new Statistics;
+		QueryResponse* response = new QueryResponse(stat);
+
+		exchangeQuery(request, response, stat, action);
 	}
 }
